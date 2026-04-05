@@ -20,7 +20,7 @@ class AGNNLayer(nn.Module):
         self.Q = nn.Linear(node_dim, edge_dim, bias=False)
         self.R = nn.Linear(node_dim, edge_dim, bias=False)
 
-        self.edge_norm = nn.BatchNorm1d(edge_dim)
+        self.edge_norm = nn.LayerNorm(edge_dim)
         self.edge_mlp = nn.Sequential(
             nn.Linear(edge_dim, edge_dim),
             nn.ReLU(),
@@ -30,7 +30,7 @@ class AGNNLayer(nn.Module):
         self.U = nn.Linear(node_dim, node_dim, bias=False)
         self.V = nn.Linear(node_dim, node_dim, bias=False)
 
-        self.node_norm = nn.BatchNorm1d(node_dim)
+        self.node_norm = nn.LayerNorm(node_dim)
 
     def forward(self, h, e, edge_index):
         src, dst = edge_index[0], edge_index[1]

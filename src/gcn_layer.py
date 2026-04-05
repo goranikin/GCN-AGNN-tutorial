@@ -71,7 +71,11 @@ class GCNForTSP(nn.Module):
           (num_edges, 1) edge label matrix
         """
         N = node_features.shape[0]
-        adj_hat = self.precompute_adj_hat(edge_index, N)
+        # Cache adj_hat (only recompute if graph size changes)
+        if not hasattr(self, "_cached_adj") or self._cached_N != N:
+            self._cached_adj = self.precompute_adj_hat(edge_index, N)
+            self._cached_N = N
+        adj_hat = self._cached_adj
 
         # (N, node_in_dim)
         h = node_features
