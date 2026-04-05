@@ -5,6 +5,7 @@ import torch
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
+import wandb
 from src.agnn_layer import AGNNForTSP
 from src.dataset import TSPDataset
 from src.gcn_layer import GCNForTSP
@@ -12,12 +13,31 @@ from src.train import evaluate, train_one_epoch
 
 
 def run_experiment(
-    model_name, model, train_loader, val_loader, device, lr=1e-3, epochs=50
+    model_name,
+    model,
+    train_loader,
+    val_loader,
+    device,
+    lr=1e-3,
+    epochs=50,
+    use_wandb=False,
+    wandb_config=None,
 ):
+    num_params = sum(p.numel() for p in model.parameters())
     print(f"\n{'=' * 60}")
     print(f"  Training: {model_name}")
-    print(f"  Parameters: {sum(p.numel() for p in model.parameters()):,}")
+    print(f"  Parameters: {num_params:,}")
     print(f"{'=' * 60}")
+
+    if use_wandb:
+        run_config = {**(wandb_config or {}), "model": model_name, "params": num_params}
+        wandb.init(
+            project=run_config.pop("wandb_project", "gcn-vs-agnn-tsp"),
+            name=model_name,
+            config=run_config,
+            reinit=True,
+        )
+        wandb.watch(model, log="gradients", log_freq=10)
 
     model = model.to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=lr, weight_decay=1e-5)
@@ -40,10 +60,31 @@ def run_experiment(
             t=f"{elapsed:.1f}s",
         )
 
+        if use_wandb:
+            wandb.log(
+                {
+                    "epoch": epoch,
+                    "train/loss": train_loss,
+                    "train/accuracy": train_acc,
+                    "val/loss": val_loss,
+                    "val/accuracy": val_acc,
+                    "val/precision": prec,
+                    "val/recall": rec,
+                    "val/f1": f1,
+                    "lr": scheduler.get_last_lr()[0],
+                    "epoch_time_s": elapsed,
+                },
+            )
+
         if f1 > best_f1:
             best_f1 = f1
 
     print(f"\n  Best Val F1: {best_f1:.4f}")
+
+    if use_wandb:
+        wandb.summary["best_val_f1"] = best_f1
+        wandb.finish()
+
     return best_f1
 
 
@@ -69,6 +110,13 @@ def main():
     )
     parser.add_argument("--epochs", type=int, default=50, help="Training epochs")
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
+    parser.add_argument("--wandb", action="store_true", help="Enable wandb logging")
+    parser.add_argument(
+        "--wandb_project",
+        type=str,
+        default="gcn-vs-agnn-tsp",
+        help="wandb project name",
+    )
     args = parser.parse_args()
 
     if torch.cuda.is_available():
@@ -98,6 +146,15 @@ def main():
         num_layers=args.num_layers,
         dropout=0.1,
     )
+    wandb_config = {
+        "hidden_dim": args.hidden_dim,
+        "num_layers": args.num_layers,
+        "epochs": args.epochs,
+        "lr": args.lr,
+        "num_nodes": args.num_nodes,
+        "wandb_project": args.wandb_project,
+    }
+
     gcn_f1 = run_experiment(
         "GCN (Kipf & Welling)",
         gcn_model,
@@ -106,6 +163,8 @@ def main():
         device,
         lr=args.lr,
         epochs=args.epochs,
+        use_wandb=args.wandb,
+        wandb_config=wandb_config,
     )
 
     # -------------------------------------------------------
@@ -126,6 +185,8 @@ def main():
         device,
         lr=args.lr,
         epochs=args.epochs,
+        use_wandb=args.wandb,
+        wandb_config=wandb_config,
     )
 
     # -------------------------------------------------------
