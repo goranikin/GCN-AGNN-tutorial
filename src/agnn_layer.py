@@ -31,7 +31,6 @@ class AGNNLayer(nn.Module):
         self.V = nn.Linear(node_dim, node_dim, bias=False)
 
         self.node_norm = nn.BatchNorm1d(node_dim)
-        self.alpha = nn.Parameter(torch.tensor(1.0))
 
     def forward(self, h, e, edge_index):
         src, dst = edge_index[0], edge_index[1]
@@ -60,7 +59,7 @@ class AGNNLayer(nn.Module):
 
         # Self-transform + aggregated neighbors, with residual
         Uh = self.U(h)
-        h_new = h + self.alpha * self.node_norm(Uh + agg)
+        h_new = h + F.relu(self.node_norm(Uh + agg))
 
         return h_new, e_new
 
