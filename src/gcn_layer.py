@@ -39,6 +39,7 @@ class GCNForTSP(nn.Module):
         for _ in range(num_layers):
             self.norms.append(nn.LayerNorm(hidden_dim))
 
+        # (hidden_dim * 2 + 1, 1) = (edge_repr_dim, 1)
         self.edge_mlp = nn.Sequential(
             nn.Linear(hidden_dim * 2 + 1, hidden_dim),
             nn.ReLU(),
@@ -47,11 +48,12 @@ class GCNForTSP(nn.Module):
 
     def precompute_adj_hat(self, edge_index, num_nodes):
         """
-        Â = D̃^{-1/2} Ã D̃^{-1/2} from the paper
+        Â = D̃^{-1/2} Ã D̃^{-1/2}
         """
         A = torch.zeros(num_nodes, num_nodes, device=edge_index.device)
         A[edge_index[0], edge_index[1]] = 1.0
 
+        # (N, N)
         A_tilde = A + torch.eye(num_nodes, device=edge_index.device)
         D_tilde = A_tilde.sum(dim=1)
         D_inv_sqrt = torch.diag(1.0 / torch.sqrt(D_tilde + 1e-8))
@@ -64,22 +66,36 @@ class GCNForTSP(nn.Module):
         Args:
           node_features: (N, node_in_dim) node feature matrix
           edge_index: (2, num_edges) edge index matrix
-          edge_features: (num_edges,) edge feature vector
+          edge_features: (num_edges, edge_in_dim) edge feature matrix
         Returns:
-          (num_edges,) edge label vector
+          (num_edges, 1) edge label matrix
         """
         N = node_features.shape[0]
         adj_hat = self.precompute_adj_hat(edge_index, N)
 
+        # (N, node_in_dim)
         h = node_features
         for layer, norm in zip(self.layers, self.norms):
+            # (N, node_in_dim) -> (N, hidden_dim) when first layer
+            # (N, hidden_dim) -> (N, hidden_dim) otherwise
             h = layer(h, adj_hat)
+            # (N, hidden_dim)
             h = norm(h)
+            # (N, hidden_dim)
             h = F.relu(h)
+            # (N, hidden_dim)
             h = F.dropout(h, self.dropout, training=self.training)
 
+        # (num_edges, hidden_dim)
         src_h = h[edge_index[0]]
         dst_h = h[edge_index[1]]
+
+        if edge_features.dim() == 1:
+            edge_features = edge_features.unsqueeze(-1)
+
+        # (num_edges, hidden_dim * 2 + 1)
         edge_repr = torch.cat([src_h, dst_h, edge_features], dim=1)
-        logits = self.edge_mlp(edge_repr)
+
+        # (num_edges, 1)
+        logits = self.edge_mlp(edge_repr).squeeze(-1)
         return logits

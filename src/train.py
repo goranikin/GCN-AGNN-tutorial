@@ -1,5 +1,6 @@
 import torch
 import torch.nn.functional as F
+from tqdm import tqdm
 
 
 def train_one_epoch(model, dataloader, optimizer, device):
@@ -8,7 +9,9 @@ def train_one_epoch(model, dataloader, optimizer, device):
     total_correct = 0
     total_edges = 0
 
-    for node_feat, edge_index, edge_feat, edge_label in dataloader:
+    for node_feat, edge_index, edge_feat, edge_label in tqdm(
+        dataloader, desc="    Train", leave=False, unit="batch"
+    ):
         node_feat = node_feat.squeeze(0).to(device)
         edge_index = edge_index.squeeze(0).to(device)
         edge_feat = edge_feat.squeeze(0).to(device)
@@ -49,7 +52,9 @@ def evaluate(model, dataloader, device):
     total_fp = 0
     total_fn = 0
 
-    for node_feat, edge_index, edge_feat, edge_label in dataloader:
+    for node_feat, edge_index, edge_feat, edge_label in tqdm(
+        dataloader, desc="    Val  ", leave=False, unit="batch"
+    ):
         node_feat = node_feat.squeeze(0).to(device)
         edge_index = edge_index.squeeze(0).to(device)
         edge_feat = edge_feat.squeeze(0).to(device)
@@ -65,13 +70,14 @@ def evaluate(model, dataloader, device):
             logits, edge_label, pos_weight=pos_weight
         )
 
-        preds = (torch.sigmoid(logits) > 0.5).float()
-        total_correct += (preds == edge_label).sum().item()
+        preds = torch.sigmoid(logits) > 0.5
+        labels = edge_label.bool()
+        total_correct += (preds == labels).sum().item()
         total_edges += edge_label.numel()
         total_loss += loss.item()
-        total_tp += (preds & edge_label).sum().item()
-        total_fp += (preds & ~edge_label).sum().item()
-        total_fn += (~preds & edge_label).sum().item()
+        total_tp += (preds & labels).sum().item()
+        total_fp += (preds & ~labels).sum().item()
+        total_fn += (~preds & labels).sum().item()
 
     avg_loss = total_loss / len(dataloader)
     accuracy = total_correct / total_edges

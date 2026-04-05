@@ -3,11 +3,12 @@ import time
 
 import torch
 from torch.utils.data import DataLoader
+from tqdm import tqdm
 
-from agnn_layer import AGNNForTSP
-from dataset import TSPDataset
-from gcn_layer import GCNForTSP
-from train import evaluate, train_one_epoch
+from src.agnn_layer import AGNNForTSP
+from src.dataset import TSPDataset
+from src.gcn_layer import GCNForTSP
+from src.train import evaluate, train_one_epoch
 
 
 def run_experiment(
@@ -23,7 +24,8 @@ def run_experiment(
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
 
     best_f1 = 0.0
-    for epoch in range(1, epochs + 1):
+    epoch_bar = tqdm(range(1, epochs + 1), desc=f"  {model_name}", unit="epoch")
+    for epoch in epoch_bar:
         t0 = time.time()
         train_loss, train_acc = train_one_epoch(model, train_loader, optimizer, device)
         val_loss, val_acc, prec, rec, f1 = evaluate(model, val_loader, device)
@@ -31,14 +33,12 @@ def run_experiment(
 
         elapsed = time.time() - t0
 
-        if epoch % 5 == 0 or epoch == 1:
-            print(
-                f"  Epoch {epoch:3d} | "
-                f"Train Loss: {train_loss:.4f}  Acc: {train_acc:.4f} | "
-                f"Val Loss: {val_loss:.4f}  F1: {f1:.4f} "
-                f"(P={prec:.3f} R={rec:.3f}) | "
-                f"{elapsed:.1f}s"
-            )
+        epoch_bar.set_postfix(
+            loss=f"{train_loss:.4f}",
+            acc=f"{train_acc:.4f}",
+            val_f1=f"{f1:.4f}",
+            t=f"{elapsed:.1f}s",
+        )
 
         if f1 > best_f1:
             best_f1 = f1
@@ -71,7 +71,12 @@ def main():
     parser.add_argument("--lr", type=float, default=1e-3, help="Learning rate")
     args = parser.parse_args()
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if torch.cuda.is_available():
+        device = torch.device("cuda")
+    elif torch.backends.mps.is_available():
+        device = torch.device("mps")
+    else:
+        device = torch.device("cpu")
     print(f"Device: {device}")
 
     dataset = TSPDataset(args.data_path, num_nodes=args.num_nodes)
@@ -142,5 +147,6 @@ def main():
         print("    With more data and training, AGNN typically pulls ahead.")
 
 
+# uv run python -m src.run
 if __name__ == "__main__":
     main()

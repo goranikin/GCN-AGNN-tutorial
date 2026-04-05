@@ -31,6 +31,7 @@ class AGNNLayer(nn.Module):
         self.V = nn.Linear(node_dim, node_dim, bias=False)
 
         self.node_norm = nn.BatchNorm1d(node_dim)
+        self.alpha = nn.Parameter(torch.tensor(1.0))
 
     def forward(self, h, e, edge_index):
         src, dst = edge_index[0], edge_index[1]
@@ -112,6 +113,8 @@ class AGNNForTSP(nn.Module):
         """
         # Project raw features to hidden dimension
         h = self.node_proj(node_feat)  # (N, hidden_dim)
+        if edge_feat.dim() == 1:
+            edge_feat = edge_feat.unsqueeze(-1)
         e = self.edge_proj(edge_feat)  # (E, hidden_dim)
 
         # Forward through AGNN layers
